@@ -22,10 +22,13 @@ import sys
 import socket
 import re
 # you may use urllib to encode data appropriately
-import urllib.parse
+# import urllib.parse
+from urllib.parse import urlparse
+from urllib.parse import urlencode
 
 def help():
     print("httpclient.py [GET/POST] [URL]\n")
+
 
 class HTTPResponse(object):
     def __init__(self, code=200, body=""):
@@ -38,16 +41,16 @@ class HTTPClient(object):
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-        return None
+        return host
 
     def get_code(self, data):
-        return None
+        return int(data.splitlines()[0].split()[1])
 
     def get_headers(self,data):
-        return None
+        return data.split("\r\n\r\n")[0]
 
     def get_body(self, data):
-        return None
+        return data.split("\r\n\r\n")[1]
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -67,14 +70,79 @@ class HTTPClient(object):
                 done = not part
         return buffer.decode('utf-8')
 
+    def validate_port(self,url):
+        port = url.port
+        if port == None:
+            port = 80
+        return port
+
+    def validate_path(self,url):
+        path = url.path
+        if path != "":
+            path = url.path
+        else:
+            path = "/"
+        return path
+
+    def request_type(self,command,path,host,args):
+        if (command == "GET"):
+            self.sendall(f"""GET {path} HTTP/1.1\r\nHost: {host}\r\nAccept-Charset: utf-8\r\nConnection: close\r\n\r\n""")
+        elif (command == "POST"):
+            self.sendall(f"""POST {path} HTTP/1.1\r\nHost: {host}\r\nAccept-Charset: utf-8\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(args)}\r\nConnection: close\r\n\r\n{args}""")
+
+
     def GET(self, url, args=None):
         code = 500
         body = ""
+
+        url = urlparse(url)
+
+        netloc = url.hostname
+        port = self.validate_port(url)
+        host = self.connect(netloc, port)
+        path = self.validate_path(url)
+
+        command = "GET"
+        self.request_type(command,path,host,args=None)
+
+        info = self.recvall(self.socket)
+        code = self.get_code(info)
+        body = self.get_body(info)
+        self.close()
+
+
         return HTTPResponse(code, body)
+
+    def validate_args(self,args):
+        if args == None:
+            args = ""
+        else:
+            args = urlencode(args)
+        return args   
+
+        
 
     def POST(self, url, args=None):
         code = 500
         body = ""
+
+        url = urlparse(url)
+        args = self.validate_args(args)
+
+        netloc = url.hostname
+        port = url.port
+        host = self.connect(netloc, port)
+        path = url.path
+
+        command = "POST"
+        self.request_type(command,path,host,args)
+
+        data = self.recvall(self.socket)
+        code = self.get_code(data)
+        body = self.get_body(data)
+        self.close()
+
+
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
